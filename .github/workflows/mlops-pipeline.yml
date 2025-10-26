@@ -188,7 +188,7 @@ jobs:
           "
       
       - name: Upload model artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: mlflow-model
           path: mlruns/
@@ -212,7 +212,7 @@ jobs:
           pip install -r requirements.txt
       
       - name: Download model artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: mlflow-model
           path: mlruns/
@@ -264,7 +264,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Download model artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: mlflow-model
           path: mlruns/
