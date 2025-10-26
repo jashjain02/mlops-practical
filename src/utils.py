@@ -66,3 +66,4 @@ def map_readmitted(label: str) -> int:
     if val == "<30": return 1
     # treat >30 and NO as negative
     return 0
+# Trigger workflow test
