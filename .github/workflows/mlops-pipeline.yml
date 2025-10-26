@@ -181,12 +181,14 @@ jobs:
       
       - name: Train model
         id: train
-        env:
-          MLFLOW_TRACKING_URI: file://./mlruns
-          MLFLOW_REGISTRY_URI: file://./mlruns
         run: |
           echo "🤖 Starting model training..."
+          # Set MLflow tracking URI to absolute path
+          export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
+          export MLFLOW_REGISTRY_URI="file://$(pwd)/mlruns"
           echo "Using MLflow tracking URI: $MLFLOW_TRACKING_URI"
+          echo "Current directory: $(pwd)"
+          echo "MLruns directory exists: $(ls -la mlruns 2>/dev/null || echo 'Directory does not exist')"
           python -m src.train --data data/diabetes.csv --register hospital_readmission
           
           # Get the latest model version
@@ -242,11 +244,12 @@ jobs:
           path: mlruns/
       
       - name: Evaluate model
-        env:
-          MLFLOW_TRACKING_URI: file://./mlruns
-          MLFLOW_REGISTRY_URI: file://./mlruns
         run: |
           echo "📊 Evaluating model performance..."
+          # Set MLflow tracking URI to absolute path
+          export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
+          export MLFLOW_REGISTRY_URI="file://$(pwd)/mlruns"
+          echo "Using MLflow tracking URI: $MLFLOW_TRACKING_URI"
           python -c "
           import mlflow
           import mlflow.pyfunc
