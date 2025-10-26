@@ -16,8 +16,8 @@ on:
         type: boolean
 
 env:
-  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'file://./mlruns' }}
-  MLFLOW_REGISTRY_URI: ${{ secrets.MLFLOW_REGISTRY_URI || 'file://./mlruns' }}
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'file://${{ github.workspace }}/mlruns' }}
+  MLFLOW_REGISTRY_URI: ${{ secrets.MLFLOW_REGISTRY_URI || 'file://${{ github.workspace }}/mlruns' }}
 
 jobs:
   detect-changes:
@@ -170,6 +170,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
+      - name: Create MLflow directory
+        run: |
+          mkdir -p mlruns
+          echo "Created mlruns directory: $(pwd)/mlruns"
+      
       - name: Train model
         id: train
         run: |
@@ -210,6 +215,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+      
+      - name: Create MLflow directory
+        run: |
+          mkdir -p mlruns
+          echo "Created mlruns directory: $(pwd)/mlruns"
       
       - name: Download model artifacts
         uses: actions/download-artifact@v4
