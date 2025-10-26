@@ -15,9 +15,7 @@ on:
         default: 'false'
         type: boolean
 
-env:
-  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'file://./mlruns' }}
-  MLFLOW_REGISTRY_URI: ${{ secrets.MLFLOW_REGISTRY_URI || 'file://./mlruns' }}
+# MLflow tracking URI will be set dynamically in each job
 
 jobs:
   detect-changes:
@@ -183,8 +181,12 @@ jobs:
       
       - name: Train model
         id: train
+        env:
+          MLFLOW_TRACKING_URI: file://./mlruns
+          MLFLOW_REGISTRY_URI: file://./mlruns
         run: |
           echo "🤖 Starting model training..."
+          echo "Using MLflow tracking URI: $MLFLOW_TRACKING_URI"
           python -m src.train --data data/diabetes.csv --register hospital_readmission
           
           # Get the latest model version
@@ -240,6 +242,9 @@ jobs:
           path: mlruns/
       
       - name: Evaluate model
+        env:
+          MLFLOW_TRACKING_URI: file://./mlruns
+          MLFLOW_REGISTRY_URI: file://./mlruns
         run: |
           echo "📊 Evaluating model performance..."
           python -c "
