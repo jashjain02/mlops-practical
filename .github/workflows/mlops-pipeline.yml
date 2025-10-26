@@ -1,0 +1,336 @@
+name: MLOps Pipeline - Auto Training & Deployment
+
+on:
+  push:
+    paths:
+      - 'data/**'
+      - 'src/**'
+      - 'requirements.txt'
+      - 'Dockerfile'
+  workflow_dispatch:
+    inputs:
+      force_retrain:
+        description: 'Force retrain even if no data changes'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'file://./mlruns' }}
+  MLFLOW_REGISTRY_URI: ${{ secrets.MLFLOW_REGISTRY_URI || 'file://./mlruns' }}
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      data-changed: ${{ steps.changes.outputs.data }}
+      src-changed: ${{ steps.changes.outputs.src }}
+      should-train: ${{ steps.decide.outputs.should-train }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check for changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force_retrain }}" = "true" ]; then
+            echo "data=true" >> $GITHUB_OUTPUT
+            echo "src=true" >> $GITHUB_OUTPUT
+          else
+            if git diff --name-only HEAD~1 HEAD | grep -E '^data/' > /dev/null; then
+              echo "data=true" >> $GITHUB_OUTPUT
+            else
+              echo "data=false" >> $GITHUB_OUTPUT
+            fi
+            
+            if git diff --name-only HEAD~1 HEAD | grep -E '^(src/|requirements\.txt|Dockerfile)' > /dev/null; then
+              echo "src=true" >> $GITHUB_OUTPUT
+            else
+              echo "src=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+      
+      - name: Decide if training is needed
+        id: decide
+        run: |
+          if [ "${{ steps.changes.outputs.data }}" = "true" ] || [ "${{ steps.changes.outputs.src }}" = "true" ]; then
+            echo "should-train=true" >> $GITHUB_OUTPUT
+          else
+            echo "should-train=false" >> $GITHUB_OUTPUT
+          fi
+
+  data-validation:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.should-train == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      data-valid: ${{ steps.validate.outputs.valid }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Validate data
+        id: validate
+        run: |
+          python -c "
+          import pandas as pd
+          import os
+          
+          data_file = 'data/diabetes.csv'
+          if not os.path.exists(data_file):
+              print('❌ Data file not found')
+              exit(1)
+          
+          try:
+              df = pd.read_csv(data_file)
+              print(f'✅ Data loaded successfully: {len(df)} rows, {len(df.columns)} columns')
+              
+              # Check for required columns
+              required_cols = ['readmitted', 'age', 'gender', 'race']
+              missing_cols = [col for col in required_cols if col not in df.columns]
+              if missing_cols:
+                  print(f'❌ Missing required columns: {missing_cols}')
+                  exit(1)
+              
+              print('✅ Data validation passed')
+              print('valid=true', file=open('$GITHUB_OUTPUT', 'a'))
+          except Exception as e:
+              print(f'❌ Data validation failed: {e}')
+              exit(1)
+          "
+
+  preprocess-data:
+    needs: [detect-changes, data-validation]
+    if: needs.detect-changes.outputs.should-train == 'true' && needs.data-validation.outputs.data-valid == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run data preprocessing
+        run: |
+          echo "🔄 Starting data preprocessing..."
+          python -c "
+          import pandas as pd
+          from src.data_preprocessing import enrich_and_clean
+          
+          # Load and preprocess data
+          df = pd.read_csv('data/diabetes.csv')
+          print(f'Original data shape: {df.shape}')
+          
+          # Apply preprocessing
+          df_processed = enrich_and_clean(df)
+          print(f'Processed data shape: {df_processed.shape}')
+          
+          # Save processed data
+          df_processed.to_csv('data/processed_diabetes.csv', index=False)
+          print('✅ Data preprocessing completed')
+          "
+
+  train-model:
+    needs: [detect-changes, data-validation, preprocess-data]
+    if: needs.detect-changes.outputs.should-train == 'true' && needs.data-validation.outputs.data-valid == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      model-version: ${{ steps.train.outputs.model-version }}
+      run-id: ${{ steps.train.outputs.run-id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Train model
+        id: train
+        run: |
+          echo "🤖 Starting model training..."
+          python -m src.train --data data/diabetes.csv --register hospital_readmission
+          
+          # Get the latest model version
+          python -c "
+          import mlflow
+          from mlflow.tracking import MlflowClient
+          
+          client = MlflowClient()
+          latest_version = client.get_latest_versions('hospital_readmission', stages=['None'])[0]
+          print(f'model-version={latest_version.version}', file=open('$GITHUB_OUTPUT', 'a'))
+          print(f'run-id={latest_version.run_id}', file=open('$GITHUB_OUTPUT', 'a'))
+          "
+      
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: mlflow-model
+          path: mlruns/
+          retention-days: 30
+
+  evaluate-model:
+    needs: [train-model]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download model artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: mlflow-model
+          path: mlruns/
+      
+      - name: Evaluate model
+        run: |
+          echo "📊 Evaluating model performance..."
+          python -c "
+          import mlflow
+          import mlflow.pyfunc
+          import pandas as pd
+          from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+          from src.utils import map_readmitted
+          
+          # Load test data
+          df = pd.read_csv('data/diabetes.csv')
+          df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
+          
+          # Load model
+          model_uri = f'models:/hospital_readmission/{needs.train-model.outputs.model-version}'
+          model = mlflow.pyfunc.load_model(model_uri)
+          
+          # Make predictions
+          predictions = model.predict(df.drop(columns=['readmitted', 'readmitted_30']))
+          
+          # Calculate metrics
+          roc_auc = roc_auc_score(df['readmitted_30'], predictions)
+          precision, recall, _ = precision_recall_curve(df['readmitted_30'], predictions)
+          pr_auc = auc(recall, precision)
+          
+          print(f'ROC-AUC: {roc_auc:.4f}')
+          print(f'PR-AUC: {pr_auc:.4f}')
+          
+          # Set performance thresholds
+          if roc_auc < 0.7:
+              print('❌ Model performance below threshold (ROC-AUC < 0.7)')
+              exit(1)
+          else:
+              print('✅ Model performance meets requirements')
+          "
+
+  build-docker:
+    needs: [train-model, evaluate-model]
+    runs-on: ubuntu-latest
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download model artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: mlflow-model
+          path: mlruns/
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/diabetes-mlops
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            MODEL_VERSION=${{ needs.train-model.outputs.model-version }}
+
+  deploy-staging:
+    needs: [build-docker]
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Deploy to staging
+        run: |
+          echo "🚀 Deploying to staging environment..."
+          echo "Docker image: ghcr.io/${{ github.repository }}/diabetes-mlops:${{ github.sha }}"
+          echo "Model version: ${{ needs.train-model.outputs.model-version }}"
+          # Add your deployment logic here
+          # For example: kubectl apply, docker-compose up, etc.
+
+  notify:
+    needs: [train-model, evaluate-model, build-docker]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify success
+        if: needs.train-model.result == 'success' && needs.evaluate-model.result == 'success' && needs.build-docker.result == 'success'
+        run: |
+          echo "✅ MLOps pipeline completed successfully!"
+          echo "Model version: ${{ needs.train-model.outputs.model-version }}"
+          echo "Docker image: ghcr.io/${{ github.repository }}/diabetes-mlops:${{ github.sha }}"
+      
+      - name: Notify failure
+        if: needs.train-model.result == 'failure' || needs.evaluate-model.result == 'failure' || needs.build-docker.result == 'failure'
+        run: |
+          echo "❌ MLOps pipeline failed!"
+          echo "Check the logs for details."
