@@ -67,3 +67,4 @@ def map_readmitted(label: str) -> int:
     # treat >30 and NO as negative
     return 0
 # Trigger workflow test
+# Trigger MLOps workflow - Sun Oct 26 16:26:51 IST 2025
