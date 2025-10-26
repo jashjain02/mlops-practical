@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from typing import Union, Optional
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
@@ -7,9 +8,9 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from .utils import age_midpoint, icd_to_chapter, clean_special_strings
 
 def enrich_and_clean(df: pd.DataFrame,
-                     adm_type_map: pd.DataFrame | None = None,
-                     disch_map: pd.DataFrame | None = None,
-                     adm_src_map: pd.DataFrame | None = None) -> pd.DataFrame:
+                     adm_type_map: Optional[pd.DataFrame] = None,
+                     disch_map: Optional[pd.DataFrame] = None,
+                     adm_src_map: Optional[pd.DataFrame] = None) -> pd.DataFrame:
 
     df = df.copy()
 
