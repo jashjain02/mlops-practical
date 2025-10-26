@@ -16,8 +16,8 @@ on:
         type: boolean
 
 env:
-  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'file://${{ github.workspace }}/mlruns' }}
-  MLFLOW_REGISTRY_URI: ${{ secrets.MLFLOW_REGISTRY_URI || 'file://${{ github.workspace }}/mlruns' }}
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI || 'file://./mlruns' }}
+  MLFLOW_REGISTRY_URI: ${{ secrets.MLFLOW_REGISTRY_URI || 'file://./mlruns' }}
 
 jobs:
   detect-changes:
@@ -175,6 +175,12 @@ jobs:
           mkdir -p mlruns
           echo "Created mlruns directory: $(pwd)/mlruns"
       
+      - name: Set MLflow tracking URI
+        run: |
+          echo "MLFLOW_TRACKING_URI=file://$(pwd)/mlruns" >> $GITHUB_ENV
+          echo "MLFLOW_REGISTRY_URI=file://$(pwd)/mlruns" >> $GITHUB_ENV
+          echo "Set MLflow tracking URI to: file://$(pwd)/mlruns"
+      
       - name: Train model
         id: train
         run: |
@@ -220,6 +226,12 @@ jobs:
         run: |
           mkdir -p mlruns
           echo "Created mlruns directory: $(pwd)/mlruns"
+      
+      - name: Set MLflow tracking URI
+        run: |
+          echo "MLFLOW_TRACKING_URI=file://$(pwd)/mlruns" >> $GITHUB_ENV
+          echo "MLFLOW_REGISTRY_URI=file://$(pwd)/mlruns" >> $GITHUB_ENV
+          echo "Set MLflow tracking URI to: file://$(pwd)/mlruns"
       
       - name: Download model artifacts
         uses: actions/download-artifact@v4
