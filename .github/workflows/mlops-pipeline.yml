@@ -258,23 +258,27 @@ jobs:
           export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
           export MLFLOW_REGISTRY_URI="file://$(pwd)/mlruns"
           echo "Using MLflow tracking URI: $MLFLOW_TRACKING_URI"
+          echo "Model version: ${{ needs.train-model.outputs.model-version }}"
           python -c "
           import mlflow
           import mlflow.pyfunc
           import pandas as pd
           from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
           from src.utils import map_readmitted
+          import os
           
           # Load test data
           df = pd.read_csv('data/diabetes.csv')
           df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
           
-          # Load model
-          model_uri = f'models:/hospital_readmission/{needs.train-model.outputs.model-version}'
+          # Load model - get version from environment variable
+          model_version = os.environ.get('MODEL_VERSION', 'latest')
+          model_uri = f'models:/hospital_readmission/{model_version}'
+          print(f'Loading model: {model_uri}')
           model = mlflow.pyfunc.load_model(model_uri)
           
-          # Make predictions
-          predictions = model.predict(df.drop(columns=['readmitted', 'readmitted_30']))
+          # Make predictions - only drop the target column, keep readmitted as feature
+          predictions = model.predict(df.drop(columns=['readmitted_30']))
           
           # Calculate metrics
           roc_auc = roc_auc_score(df['readmitted_30'], predictions)
@@ -291,6 +295,8 @@ jobs:
           else:
               print('✅ Model performance meets requirements')
           "
+        env:
+          MODEL_VERSION: ${{ needs.train-model.outputs.model-version }}
 
   build-docker:
     needs: [train-model, evaluate-model]
