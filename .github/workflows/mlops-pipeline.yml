@@ -170,7 +170,8 @@ jobs:
       
       - name: Create MLflow directory
         run: |
-          mkdir -p mlruns
+          mkdir -p ./mlruns
+          chmod 755 ./mlruns
           echo "Created mlruns directory: $(pwd)/mlruns"
       
       - name: Set MLflow tracking URI
@@ -183,6 +184,9 @@ jobs:
         id: train
         run: |
           echo "🤖 Starting model training..."
+          # Ensure MLflow directory exists and is writable
+          mkdir -p ./mlruns
+          chmod 755 ./mlruns
           # Set MLflow tracking URI to absolute path
           export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
           export MLFLOW_REGISTRY_URI="file://$(pwd)/mlruns"
@@ -228,7 +232,8 @@ jobs:
       
       - name: Create MLflow directory
         run: |
-          mkdir -p mlruns
+          mkdir -p ./mlruns
+          chmod 755 ./mlruns
           echo "Created mlruns directory: $(pwd)/mlruns"
       
       - name: Set MLflow tracking URI
@@ -246,6 +251,9 @@ jobs:
       - name: Evaluate model
         run: |
           echo "📊 Evaluating model performance..."
+          # Ensure MLflow directory exists and is writable
+          mkdir -p ./mlruns
+          chmod 755 ./mlruns
           # Set MLflow tracking URI to absolute path
           export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
           export MLFLOW_REGISTRY_URI="file://$(pwd)/mlruns"

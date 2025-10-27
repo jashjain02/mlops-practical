@@ -2,6 +2,26 @@ import pandas as pd
 import streamlit as st
 import mlflow
 import mlflow.pyfunc
+import os
+
+# Set MLflow tracking URI
+mlflow.set_tracking_uri("file://" + os.path.join(os.getcwd(), "mlruns"))
+
+def age_bucket_to_years(age_bucket):
+    """Convert age bucket to years (midpoint)"""
+    age_mapping = {
+        "[0-10)": 5,
+        "[10-20)": 15,
+        "[20-30)": 25,
+        "[30-40)": 35,
+        "[40-50)": 45,
+        "[50-60)": 55,
+        "[60-70)": 65,
+        "[70-80)": 75,
+        "[80-90)": 85,
+        "[90-100)": 95
+    }
+    return age_mapping.get(age_bucket, 65)
 
 st.set_page_config(page_title="Hospital Readmission (30d)", page_icon="🏥", layout="wide")
 st.title("🏥 Hospital Readmission (30-day)")
@@ -56,18 +76,67 @@ with tab1:
     change = st.selectbox("change", ["No","Ch"])
     diabetesMed = st.selectbox("diabetesMed", ["No","Yes"])
 
+    # Create a complete row with all required columns
     row = {
-        "race": race, "gender": gender, "age": age_bucket,
-        "time_in_hospital": time_in_hosp, "num_lab_procedures": num_lab,
-        "num_procedures": num_proc, "num_medications": num_meds,
-        "number_outpatient": n_out, "number_emergency": n_er, "number_inpatient": n_in,
-        "number_diagnoses": n_dx, "admission_type_desc": adm_type_desc,
-        "discharge_disposition_desc": disch_desc, "admission_source_desc": adm_src_desc,
-        "diag_1_chapter": diag1, "diag_2_chapter": diag2, "diag_3_chapter": diag3,
-        "max_glu_serum": max_glu, "A1Cresult": a1c,
-        "insulin": insulin, "metformin": metformin, "glipizide": glipizide,
-        "glimepiride": glimepiride, "glyburide": glyburide,
-        "change": change, "diabetesMed": diabetesMed
+        # Basic demographics
+        "race": race, 
+        "gender": gender, 
+        "age_years": age_bucket_to_years(age_bucket),  # Calculate age from bucket
+        "weight": 80.0,  # Default weight
+        
+        # Hospital stay info
+        "time_in_hospital": time_in_hosp, 
+        "num_lab_procedures": num_lab,
+        "num_procedures": num_proc, 
+        "num_medications": num_meds,
+        "number_outpatient": n_out, 
+        "number_emergency": n_er, 
+        "number_inpatient": n_in,
+        "number_diagnoses": n_dx,
+        
+        # Admission/discharge info (using IDs instead of descriptions)
+        "admission_type_id": 1,  # Emergency
+        "discharge_disposition_id": 1,  # Discharged to home
+        "admission_source_id": 1,  # Physician Referral
+        
+        # Diagnosis chapters
+        "diag_1_chapter": diag1, 
+        "diag_2_chapter": diag2, 
+        "diag_3_chapter": diag3,
+        
+        # Lab results
+        "max_glu_serum": max_glu, 
+        "A1Cresult": a1c,
+        
+        # Diabetes medications (all possible columns)
+        "insulin": insulin, 
+        "metformin": metformin, 
+        "glipizide": glipizide,
+        "glimepiride": glimepiride, 
+        "glyburide": glyburide,
+        "repaglinide": "No",
+        "nateglinide": "No",
+        "chlorpropamide": "No",
+        "glimepiride-pioglitazone": "No",
+        "glipizide-metformin": "No",
+        "glyburide-metformin": "No",
+        "metformin-rosiglitazone": "No",
+        "metformin-pioglitazone": "No",
+        "acarbose": "No",
+        "miglitol": "No",
+        "troglitazone": "No",
+        "tolazamide": "No",
+        "examide": "No",
+        "citoglipton": "No",
+        "acetohexamide": "No",
+        "tolbutamide": "No",
+        "pioglitazone": "No",
+        "rosiglitazone": "No",
+        
+        # Other features
+        "change": change, 
+        "diabetesMed": diabetesMed,
+        "readmitted": "NO"  # This is a feature, not the target
     }
     df_single = pd.DataFrame([row])
 
@@ -75,6 +144,7 @@ with tab1:
         if st.session_state.model is None:
             st.warning("Load a model from the sidebar first.")
         else:
+            # Use all columns as features (readmitted is a feature, not target)
             prob = st.session_state.model.predict(df_single)[0]
             st.metric("30-day Readmission Probability", f"{prob:.2%}")
             st.progress(min(max(float(prob), 0.0), 1.0))
