@@ -280,7 +280,7 @@ jobs:
           df = pd.read_csv('data/diabetes.csv')
           df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
           
-          # Apply the exact same preprocessing as training
+          # Apply the exact same preprocessing as training (no mapping files)
           print('Applying data preprocessing...')
           df_processed = enrich_and_clean(df)
           
@@ -301,6 +301,14 @@ jobs:
           model_uri = f'models:/hospital_readmission/{model_version}'
           print(f'Loading model: {model_uri}')
           model = mlflow.pyfunc.load_model(model_uri)
+          
+          # Debug: Check what columns the model expects
+          print('Model loaded successfully')
+          print('Model type:', type(model))
+          if hasattr(model, 'metadata') and hasattr(model.metadata, 'signature'):
+              print('Model signature:', model.metadata.signature)
+          if hasattr(model, 'predict') and hasattr(model.predict, '__self__'):
+              print('Model has predict method')
           
           # Make predictions - only drop the target column
           predictions = model.predict(df_processed.drop(columns=['readmitted_30']))
