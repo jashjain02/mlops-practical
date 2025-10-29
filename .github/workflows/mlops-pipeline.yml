@@ -1,4 +1,4 @@
-name: MLOps Pipeline - Auto Training & Deployment
+name: MLOps Pipeline - Auto Training & Deployment (Python 3.10)
 
 on:
   push:
