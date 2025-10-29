@@ -146,6 +146,13 @@ jobs:
           df_processed.to_csv('data/processed_diabetes.csv', index=False)
           print('✅ Data preprocessing completed')
           "
+      
+      - name: Upload processed data
+        uses: actions/upload-artifact@v4
+        with:
+          name: processed-data
+          path: data/processed_diabetes.csv
+          retention-days: 30
 
   train-model:
     needs: [detect-changes, data-validation, preprocess-data]
@@ -214,7 +221,7 @@ jobs:
           retention-days: 30
 
   evaluate-model:
-    needs: [train-model]
+    needs: [train-model, preprocess-data]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -248,6 +255,12 @@ jobs:
           name: mlflow-model
           path: mlruns/
       
+      - name: Download processed data
+        uses: actions/download-artifact@v4
+        with:
+          name: processed-data
+          path: data/
+      
       - name: Evaluate model
         run: |
           echo "📊 Evaluating model performance..."
@@ -265,26 +278,23 @@ jobs:
           import pandas as pd
           from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
           from src.utils import map_readmitted
-          from src.data_preprocessing import enrich_and_clean
           import os
           
-          # Prefer already preprocessed data if available
+          # Use the downloaded processed data
           processed_path = 'data/processed_diabetes.csv'
-          raw_path = 'data/diabetes.csv'
-          if os.path.exists(processed_path):
-              print(f'Found preprocessed data at {processed_path}. Using it for evaluation.')
-              df_processed = pd.read_csv(processed_path)
-              # Ensure target column exists (recompute if missing)
-              if 'readmitted_30' not in df_processed.columns and 'readmitted' in df_processed.columns:
-                  df_processed['readmitted_30'] = df_processed['readmitted'].apply(map_readmitted)
-          else:
-              print('Preprocessed data not found. Loading raw data and applying preprocessing...')
-              df = pd.read_csv(raw_path)
-              df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
-              print('Applying data preprocessing...')
-              df_processed = enrich_and_clean(df)
+          print(f'Loading processed data from {processed_path}...')
+          df_processed = pd.read_csv(processed_path)
+          
+          # Ensure target column exists (recompute if missing)
+          if 'readmitted_30' not in df_processed.columns and 'readmitted' in df_processed.columns:
+              print('Adding readmitted_30 target column...')
+              df_processed['readmitted_30'] = df_processed['readmitted'].apply(map_readmitted)
+          elif 'readmitted_30' not in df_processed.columns:
+              print('Warning: No readmitted or readmitted_30 column found. Using dummy target.')
+              df_processed['readmitted_30'] = 0
           
           print(f'Processed data shape: {df_processed.shape}')
+          print(f'Columns: {list(df_processed.columns)}')
           print(f'Has required cols? age_years={"age_years" in df_processed.columns}, diag1={"diag_1_chapter" in df_processed.columns}, diag2={"diag_2_chapter" in df_processed.columns}, diag3={"diag_3_chapter" in df_processed.columns}')
           
           # Load model - get version from environment variable
