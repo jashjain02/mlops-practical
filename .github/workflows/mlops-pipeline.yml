@@ -316,7 +316,15 @@ jobs:
               print('Model has predict method')
           
           # Make predictions - only drop the target column
-          predictions = model.predict(df_processed.drop(columns=['readmitted_30']))
+          prediction_data = df_processed.drop(columns=['readmitted_30'])
+          print(f'Prediction data shape: {prediction_data.shape}')
+          print(f'Prediction data columns: {list(prediction_data.columns)}')
+          print(f'Prediction data dtypes: {prediction_data.dtypes.to_dict()}')
+          
+          # Check for any NaN values that might cause issues
+          print(f'NaN values per column: {prediction_data.isnull().sum().to_dict()}')
+          
+          predictions = model.predict(prediction_data)
           
           # Calculate metrics
           roc_auc = roc_auc_score(df_processed['readmitted_30'], predictions)
