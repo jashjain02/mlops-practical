@@ -275,14 +275,19 @@ jobs:
           from src.data_preprocessing import enrich_and_clean
           import os
           
-          # Load raw data and apply preprocessing (same as training)
-          print('Loading raw data and applying preprocessing...')
-          df = pd.read_csv('data/diabetes.csv')
-          df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
-          
-          # Apply the exact same preprocessing as training (no mapping files)
-          print('Applying data preprocessing...')
-          df_processed = enrich_and_clean(df)
+          # Try to use preprocessed data first, fallback to raw data
+          processed_path = 'data/processed_diabetes.csv'
+          if os.path.exists(processed_path):
+              print(f'Using preprocessed data from {processed_path}...')
+              df_processed = pd.read_csv(processed_path)
+              # Ensure target column exists
+              if 'readmitted_30' not in df_processed.columns and 'readmitted' in df_processed.columns:
+                  df_processed['readmitted_30'] = df_processed['readmitted'].apply(map_readmitted)
+          else:
+              print('Preprocessed data not found, using raw data and preprocessing...')
+              df = pd.read_csv('data/diabetes.csv')
+              df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
+              df_processed = enrich_and_clean(df)
           
           print(f'Processed data shape: {df_processed.shape}')
           print(f'Columns: {list(df_processed.columns)}')
