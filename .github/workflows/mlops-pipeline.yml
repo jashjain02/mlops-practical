@@ -268,15 +268,24 @@ jobs:
           from src.data_preprocessing import enrich_and_clean
           import os
           
-          # Load test data
-          df = pd.read_csv('data/diabetes.csv')
-          df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
+          # Prefer already preprocessed data if available
+          processed_path = 'data/processed_diabetes.csv'
+          raw_path = 'data/diabetes.csv'
+          if os.path.exists(processed_path):
+              print(f'Found preprocessed data at {processed_path}. Using it for evaluation.')
+              df_processed = pd.read_csv(processed_path)
+              # Ensure target column exists (recompute if missing)
+              if 'readmitted_30' not in df_processed.columns and 'readmitted' in df_processed.columns:
+                  df_processed['readmitted_30'] = df_processed['readmitted'].apply(map_readmitted)
+          else:
+              print('Preprocessed data not found. Loading raw data and applying preprocessing...')
+              df = pd.read_csv(raw_path)
+              df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
+              print('Applying data preprocessing...')
+              df_processed = enrich_and_clean(df)
           
-          # Apply the same preprocessing that was used during training
-          print('Applying data preprocessing...')
-          df_processed = enrich_and_clean(df)
           print(f'Processed data shape: {df_processed.shape}')
-          print(f'Processed columns: {list(df_processed.columns)}')
+          print(f'Has required cols? age_years={"age_years" in df_processed.columns}, diag1={"diag_1_chapter" in df_processed.columns}, diag2={"diag_2_chapter" in df_processed.columns}, diag3={"diag_3_chapter" in df_processed.columns}')
           
           # Load model - get version from environment variable
           model_version = os.environ.get('MODEL_VERSION', 'latest')
