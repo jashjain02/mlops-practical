@@ -221,7 +221,7 @@ jobs:
           retention-days: 30
 
   evaluate-model:
-    needs: [train-model, preprocess-data]
+    needs: [train-model]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -255,12 +255,6 @@ jobs:
           name: mlflow-model
           path: mlruns/
       
-      - name: Download processed data
-        uses: actions/download-artifact@v4
-        with:
-          name: processed-data
-          path: data/
-      
       - name: Evaluate model
         run: |
           echo "📊 Evaluating model performance..."
@@ -278,24 +272,29 @@ jobs:
           import pandas as pd
           from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
           from src.utils import map_readmitted
+          from src.data_preprocessing import enrich_and_clean
           import os
           
-          # Use the downloaded processed data
-          processed_path = 'data/processed_diabetes.csv'
-          print(f'Loading processed data from {processed_path}...')
-          df_processed = pd.read_csv(processed_path)
+          # Load raw data and apply preprocessing (same as training)
+          print('Loading raw data and applying preprocessing...')
+          df = pd.read_csv('data/diabetes.csv')
+          df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
           
-          # Ensure target column exists (recompute if missing)
-          if 'readmitted_30' not in df_processed.columns and 'readmitted' in df_processed.columns:
-              print('Adding readmitted_30 target column...')
-              df_processed['readmitted_30'] = df_processed['readmitted'].apply(map_readmitted)
-          elif 'readmitted_30' not in df_processed.columns:
-              print('Warning: No readmitted or readmitted_30 column found. Using dummy target.')
-              df_processed['readmitted_30'] = 0
+          # Apply the exact same preprocessing as training
+          print('Applying data preprocessing...')
+          df_processed = enrich_and_clean(df)
           
           print(f'Processed data shape: {df_processed.shape}')
           print(f'Columns: {list(df_processed.columns)}')
           print(f'Has required cols? age_years={"age_years" in df_processed.columns}, diag1={"diag_1_chapter" in df_processed.columns}, diag2={"diag_2_chapter" in df_processed.columns}, diag3={"diag_3_chapter" in df_processed.columns}')
+          
+          # Verify we have the required columns
+          required_cols = ['age_years', 'diag_1_chapter', 'diag_2_chapter', 'diag_3_chapter']
+          missing_cols = [col for col in required_cols if col not in df_processed.columns]
+          if missing_cols:
+              print(f'ERROR: Missing required columns: {missing_cols}')
+              print('Available columns:', list(df_processed.columns))
+              exit(1)
           
           # Load model - get version from environment variable
           model_version = os.environ.get('MODEL_VERSION', 'latest')
