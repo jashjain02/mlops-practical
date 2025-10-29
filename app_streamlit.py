@@ -151,15 +151,21 @@ with tab1:
 
 with tab2:
     st.subheader("Batch CSV")
-    st.caption("Upload raw UCI-style CSV; the app expects the same columns as training (except 'readmitted').")
+    st.caption("Upload raw UCI-style CSV; the app will preprocess it to match the training format.")
     file = st.file_uploader("CSV", type=["csv"])
     if file and st.session_state.model is not None:
         df = pd.read_csv(file)
-        # No internal enrich here—assume your training script preprocessed consistently for deployed data.
-        preds = st.session_state.model.predict(df)
-        out = df.copy()
-        out["readmission_prob"] = preds
-        st.dataframe(out.head(50))
-        st.download_button("Download predictions", out.to_csv(index=False).encode(), "readmission_predictions.csv", "text/csv")
+        try:
+            # Apply the same preprocessing that was used during training
+            from src.data_preprocessing import enrich_and_clean
+            df_processed = enrich_and_clean(df)
+            preds = st.session_state.model.predict(df_processed)
+            out = df.copy()  # Keep original data for display
+            out["readmission_prob"] = preds
+            st.dataframe(out.head(50))
+            st.download_button("Download predictions", out.to_csv(index=False).encode(), "readmission_predictions.csv", "text/csv")
+        except Exception as e:
+            st.error(f"Error processing CSV: {e}")
+            st.info("Make sure your CSV has the expected columns from the original UCI dataset.")
     elif file and st.session_state.model is None:
         st.warning("Load a model first.")

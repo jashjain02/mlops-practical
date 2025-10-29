@@ -265,11 +265,18 @@ jobs:
           import pandas as pd
           from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
           from src.utils import map_readmitted
+          from src.data_preprocessing import enrich_and_clean
           import os
           
           # Load test data
           df = pd.read_csv('data/diabetes.csv')
           df['readmitted_30'] = df['readmitted'].apply(map_readmitted)
+          
+          # Apply the same preprocessing that was used during training
+          print('Applying data preprocessing...')
+          df_processed = enrich_and_clean(df)
+          print(f'Processed data shape: {df_processed.shape}')
+          print(f'Processed columns: {list(df_processed.columns)}')
           
           # Load model - get version from environment variable
           model_version = os.environ.get('MODEL_VERSION', 'latest')
@@ -277,12 +284,12 @@ jobs:
           print(f'Loading model: {model_uri}')
           model = mlflow.pyfunc.load_model(model_uri)
           
-          # Make predictions - only drop the target column, keep readmitted as feature
-          predictions = model.predict(df.drop(columns=['readmitted_30']))
+          # Make predictions - only drop the target column
+          predictions = model.predict(df_processed.drop(columns=['readmitted_30']))
           
           # Calculate metrics
-          roc_auc = roc_auc_score(df['readmitted_30'], predictions)
-          precision, recall, _ = precision_recall_curve(df['readmitted_30'], predictions)
+          roc_auc = roc_auc_score(df_processed['readmitted_30'], predictions)
+          precision, recall, _ = precision_recall_curve(df_processed['readmitted_30'], predictions)
           pr_auc = auc(recall, precision)
           
           print(f'ROC-AUC: {roc_auc:.4f}')
