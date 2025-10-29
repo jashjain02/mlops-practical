@@ -12,7 +12,7 @@ on:
       force_retrain:
         description: 'Force retrain even if no data changes'
         required: false
-        default: 'false'
+        default: 'true'
         type: boolean
 
 # MLflow tracking URI will be set dynamically in each job
@@ -53,7 +53,8 @@ jobs:
       - name: Decide if training is needed
         id: decide
         run: |
-          if [ "${{ steps.changes.outputs.data }}" = "true" ] || [ "${{ steps.changes.outputs.src }}" = "true" ]; then
+          # Always run training for manual triggers or when changes are detected
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.changes.outputs.data }}" = "true" ] || [ "${{ steps.changes.outputs.src }}" = "true" ]; then
             echo "should-train=true" >> $GITHUB_OUTPUT
           else
             echo "should-train=false" >> $GITHUB_OUTPUT
