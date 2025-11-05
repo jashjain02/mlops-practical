@@ -181,32 +181,36 @@ jobs:
         env:
           DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_REPO_NAME: ${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}
         run: |
           if [ -z "$DAGSHUB_USERNAME" ] || [ -z "$DAGSHUB_TOKEN" ]; then
-            echo "Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set"
+            echo "Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set in GitHub Secrets"
             exit 1
           fi
           echo "DAGSHUB_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
-          echo "DAGSHUB_REPO_NAME=${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}" >> $GITHUB_ENV
-          echo "MLFLOW_TRACKING_URI=https://dagshub.com/$DAGSHUB_USERNAME/${{ secrets.DAGSHUB_REPO_NAME }}.mlflow" >> $GITHUB_ENV
+          echo "DAGSHUB_REPO_NAME=$DAGSHUB_REPO_NAME" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_URI=https://dagshub.com/$DAGSHUB_USERNAME/$DAGSHUB_REPO_NAME.mlflow" >> $GITHUB_ENV
           echo "MLFLOW_TRACKING_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
           echo "MLFLOW_TRACKING_PASSWORD=$DAGSHUB_TOKEN" >> $GITHUB_ENV
-          echo "Configured DagsHub MLflow tracking"
+          echo "✅ Configured DagsHub MLflow tracking: https://dagshub.com/$DAGSHUB_USERNAME/$DAGSHUB_REPO_NAME.mlflow"
       
       - name: Train model
         id: train
         env:
           DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
-          DAGSHUB_REPO_NAME: ${{ secrets.DAGSHUB_REPO_NAME }}
-          MLFLOW_TRACKING_URI: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME }}.mlflow
-          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
-          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_REPO_NAME: ${{ env.DAGSHUB_REPO_NAME }}
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ env.MLFLOW_TRACKING_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ env.MLFLOW_TRACKING_PASSWORD }}
         run: |
-          echo "🤖 Starting model training..."
-          echo "Using DagsHub MLflow tracking URI: $MLFLOW_TRACKING_URI"
+          echo "🤖 Starting model training with DagsHub..."
+          echo "Tracking URI: $MLFLOW_TRACKING_URI"
+          echo "Repository: $DAGSHUB_USERNAME/$DAGSHUB_REPO_NAME"
+          
+          # Train the model (this will log to DagsHub)
           python -m src.train --data data/diabetes.csv --register hospital_readmission
           
-          # Get the latest model version
+          # Get the latest run ID from DagsHub
           python -c "
           import mlflow
           import os
@@ -214,9 +218,43 @@ jobs:
           
           mlflow.set_tracking_uri(os.getenv('MLFLOW_TRACKING_URI'))
           client = MlflowClient()
-          latest_version = client.get_latest_versions('hospital_readmission', stages=['None'])[0]
-          print(f'model-version={latest_version.version}', file=open('$GITHUB_OUTPUT', 'a'))
-          print(f'run-id={latest_version.run_id}', file=open('$GITHUB_OUTPUT', 'a'))
+          
+          # Get the latest run from the experiment
+          try:
+              experiment = client.get_experiment_by_name('hospital-readmission')
+              if experiment:
+                  runs = client.search_runs(
+                      experiment_ids=[experiment.experiment_id],
+                      max_results=1,
+                      order_by=['start_time DESC']
+                  )
+                  if runs:
+                      latest_run = runs[0]
+                      run_id = latest_run.info.run_id
+                      print(f'run-id={run_id}', file=open('$GITHUB_OUTPUT', 'a'))
+                      print(f'✅ Latest run ID: {run_id}')
+                      
+                      # Try to get model version if registry exists
+                      try:
+                          versions = client.get_latest_versions('hospital_readmission', stages=['None'])
+                          if versions:
+                              latest_version = versions[0]
+                              print(f'model-version={latest_version.version}', file=open('$GITHUB_OUTPUT', 'a'))
+                              print(f'✅ Model version: {latest_version.version}')
+                          else:
+                              print('model-version=1', file=open('$GITHUB_OUTPUT', 'a'))
+                      except Exception as e:
+                          print(f'⚠️  Model registry not available, using run ID: {e}')
+                          print('model-version=1', file=open('$GITHUB_OUTPUT', 'a'))
+                  else:
+                      print('❌ No runs found')
+                      exit(1)
+              else:
+                  print('❌ Experiment not found')
+                  exit(1)
+          except Exception as e:
+              print(f'❌ Error getting run info: {e}')
+              exit(1)
           "
 
   evaluate-model:
@@ -240,25 +278,32 @@ jobs:
         env:
           DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          DAGSHUB_REPO_NAME: ${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}
         run: |
           if [ -z "$DAGSHUB_USERNAME" ] || [ -z "$DAGSHUB_TOKEN" ]; then
-            echo "Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set"
+            echo "Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set in GitHub Secrets"
             exit 1
           fi
-          echo "MLFLOW_TRACKING_URI=https://dagshub.com/$DAGSHUB_USERNAME/${{ secrets.DAGSHUB_REPO_NAME }}.mlflow" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_URI=https://dagshub.com/$DAGSHUB_USERNAME/$DAGSHUB_REPO_NAME.mlflow" >> $GITHUB_ENV
           echo "MLFLOW_TRACKING_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
           echo "MLFLOW_TRACKING_PASSWORD=$DAGSHUB_TOKEN" >> $GITHUB_ENV
-          echo "Configured DagsHub MLflow tracking"
+          echo "DAGSHUB_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
+          echo "DAGSHUB_REPO_NAME=$DAGSHUB_REPO_NAME" >> $GITHUB_ENV
+          echo "✅ Configured DagsHub MLflow tracking for evaluation"
       
       - name: Evaluate model
         env:
-          MLFLOW_TRACKING_URI: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME }}.mlflow
-          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
-          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ env.MLFLOW_TRACKING_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ env.MLFLOW_TRACKING_PASSWORD }}
+          DAGSHUB_USERNAME: ${{ env.DAGSHUB_USERNAME }}
+          DAGSHUB_REPO_NAME: ${{ env.DAGSHUB_REPO_NAME }}
+          RUN_ID: ${{ needs.train-model.outputs.run-id }}
           MODEL_VERSION: ${{ needs.train-model.outputs.model-version }}
         run: |
-          echo "📊 Evaluating model performance..."
-          echo "Using DagsHub MLflow tracking URI: $MLFLOW_TRACKING_URI"
+          echo "📊 Evaluating model performance with DagsHub..."
+          echo "Tracking URI: $MLFLOW_TRACKING_URI"
+          echo "Run ID: $RUN_ID"
           echo "Model version: $MODEL_VERSION"
           python -c "
           import mlflow
@@ -303,11 +348,26 @@ jobs:
           # Set MLflow tracking URI
           mlflow.set_tracking_uri(os.getenv('MLFLOW_TRACKING_URI'))
           
-          # Load model - get version from environment variable
-          model_version = os.environ.get('MODEL_VERSION', 'latest')
-          model_uri = f'models:/hospital_readmission/{model_version}'
-          print(f'Loading model: {model_uri}')
-          model = mlflow.pyfunc.load_model(model_uri)
+          # Try to load model from registry first, fallback to run ID
+          run_id = os.environ.get('RUN_ID')
+          model_version = os.environ.get('MODEL_VERSION', '1')
+          
+          try:
+              # Try loading from model registry
+              model_uri = f'models:/hospital_readmission/{model_version}'
+              print(f'Attempting to load model from registry: {model_uri}')
+              model = mlflow.pyfunc.load_model(model_uri)
+              print('✅ Model loaded from registry')
+          except Exception as e:
+              print(f'⚠️  Could not load from registry ({e}), trying run ID...')
+              if run_id:
+                  # Fallback to loading directly from run
+                  model_uri = f'runs:/{run_id}/model'
+                  print(f'Loading model from run: {model_uri}')
+                  model = mlflow.pyfunc.load_model(model_uri)
+                  print('✅ Model loaded from run')
+              else:
+                  raise Exception('No run ID available and registry load failed')
           
           # Debug: Check what columns the model expects
           print('Model loaded successfully')
@@ -355,7 +415,13 @@ jobs:
           echo "✅ MLOps pipeline completed successfully!"
           echo "Model version: ${{ needs.train-model.outputs.model-version }}"
           echo "Model run ID: ${{ needs.train-model.outputs.run-id }}"
-          echo "View model on DagsHub: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME }}"
+          echo ""
+          echo "📊 View results on DagsHub:"
+          echo "  - Experiments: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}/experiments"
+          echo "  - MLflow UI: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}.mlflow"
+          if [ -n "${{ needs.train-model.outputs.run-id }}" ]; then
+            echo "  - Latest Run: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}.mlflow/#/experiments/0/runs/${{ needs.train-model.outputs.run-id }}"
+          fi
       
       - name: Notify failure
         if: needs.train-model.result == 'failure' || needs.evaluate-model.result == 'failure'

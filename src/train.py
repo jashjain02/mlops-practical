@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import mlflow
 import mlflow.pyfunc
+from mlflow.exceptions import RestException
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 from sklearn.pipeline import Pipeline
@@ -100,12 +101,50 @@ def main(args):
         mlflow.log_figure(pr_fig(y_va, y_prob), "figures/pr.png")
 
         # save pyfunc model
-        mlflow.pyfunc.log_model(
-            artifact_path="model",
-            python_model=ReadmissionPyfuncModel(pipe),
-            registered_model_name=(args.register if args.register else None),
-            pip_requirements="requirements.txt",
-        )
+        # DagsHub may not support the newer MLflow "logged model" endpoint, so we catch the error
+        try:
+            # Use artifact_path (older API) for better DagsHub compatibility
+            mlflow.pyfunc.log_model(
+                artifact_path="model",
+                python_model=ReadmissionPyfuncModel(pipe),
+                pip_requirements="requirements.txt",
+            )
+            print("✅ Model logged successfully")
+        except RestException as e:
+            # DagsHub doesn't support the logged model endpoint in newer MLflow versions
+            if "unsupported endpoint" in str(e).lower() or "INTERNAL_ERROR" in str(e):
+                print(f"⚠️  DagsHub doesn't support logged model endpoint (this is okay)")
+                print(f"   Model artifacts are saved, but logged model feature is disabled.")
+                print(f"   You can still use the model from: runs:/{run.info.run_id}/model")
+            else:
+                raise
+        except Exception as e:
+            print(f"⚠️  Warning: Could not log model: {e}")
+            print(f"   Model artifacts may still be available at: runs:/{run.info.run_id}/model")
+        
+        # Register model separately (skip if DagsHub doesn't support it)
+        if args.register:
+            try:
+                from mlflow.tracking import MlflowClient
+                client = MlflowClient()
+                model_uri = f"runs:/{run.info.run_id}/model"
+                
+                # Try to create registered model if it doesn't exist
+                try:
+                    client.create_registered_model(args.register)
+                except Exception:
+                    pass  # Model might already exist, that's okay
+                
+                # Create model version
+                mv = client.create_model_version(
+                    name=args.register,
+                    source=model_uri,
+                    run_id=run.info.run_id
+                )
+                print(f"✅ Registered model version {mv.version} for {args.register}")
+            except Exception as e:
+                print(f"⚠️  Could not register model (this is okay - DagsHub may not support model registry): {e}")
+                print(f"   Model is still logged at: runs:/{run.info.run_id}/model")
         print(f"[run_id] {run.info.run_id}")
 
 if __name__ == "__main__":
