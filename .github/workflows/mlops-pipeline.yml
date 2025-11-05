@@ -376,9 +376,11 @@ jobs:
           
           # Set credentials for artifact downloads (MLflow reads these automatically)
           # These are already set in the environment from the workflow step
+          tracking_username = os.getenv('MLFLOW_TRACKING_USERNAME', '')
+          tracking_password = os.getenv('MLFLOW_TRACKING_PASSWORD', '')
           
           print(f'Tracking URI set: {tracking_uri}')
-          print(f'Authentication configured: {bool(os.getenv("MLFLOW_TRACKING_USERNAME"))}')
+          print(f'Authentication configured: {bool(tracking_username)}')
           
           # Try to load model from registry first, fallback to run ID
           run_id = os.environ.get('RUN_ID')
