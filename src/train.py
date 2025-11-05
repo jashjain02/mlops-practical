@@ -120,6 +120,7 @@ def main(args):
 
         # save pyfunc model
         # DagsHub may not support the newer MLflow "logged model" endpoint, so we catch the error
+        model_saved = False
         try:
             # Use artifact_path (older API) for better DagsHub compatibility
             mlflow.pyfunc.log_model(
@@ -128,17 +129,54 @@ def main(args):
                 pip_requirements="requirements.txt",
             )
             print("✅ Model logged successfully")
+            model_saved = True
+            
+            # Verify model was actually saved by checking if we can access it
+            try:
+                from mlflow.tracking import MlflowClient
+                client = MlflowClient()
+                # Try to list artifacts to verify they exist
+                artifacts = client.list_artifacts(run.info.run_id, "model")
+                if artifacts:
+                    print(f"✅ Verified: Model artifacts saved ({len(artifacts)} files)")
+                    model_saved = True
+                else:
+                    print("⚠️  Warning: Model logging succeeded but no artifacts found")
+                    model_saved = False
+            except Exception as verify_error:
+                print(f"⚠️  Warning: Could not verify model artifacts: {verify_error}")
+                # Don't fail if verification fails, assume it worked
+                
         except RestException as e:
+            error_msg = str(e)
+            print(f"❌ Error logging model: {error_msg}")
+            
             # DagsHub doesn't support the logged model endpoint in newer MLflow versions
-            if "unsupported endpoint" in str(e).lower() or "INTERNAL_ERROR" in str(e):
-                print(f"⚠️  DagsHub doesn't support logged model endpoint (this is okay)")
-                print(f"   Model artifacts are saved, but logged model feature is disabled.")
-                print(f"   You can still use the model from: runs:/{run.info.run_id}/model")
+            if "unsupported endpoint" in error_msg.lower() or "INTERNAL_ERROR" in error_msg:
+                print(f"⚠️  DagsHub doesn't support logged model endpoint")
+                print(f"   This means the model was NOT saved to DagsHub.")
+                print(f"   Metrics and parameters are saved, but model artifacts are not available.")
+                print(f"   Solution: DagsHub requires DVC for artifact storage, or use a different storage backend.")
+                model_saved = False
             else:
+                print(f"❌ Unexpected error: {error_msg}")
                 raise
         except Exception as e:
-            print(f"⚠️  Warning: Could not log model: {e}")
-            print(f"   Model artifacts may still be available at: runs:/{run.info.run_id}/model")
+            print(f"❌ Error logging model: {e}")
+            print(f"   Model artifacts were NOT saved.")
+            model_saved = False
+        
+        if not model_saved:
+            print("")
+            print("⚠️  IMPORTANT: Model artifacts were not saved to DagsHub")
+            print("   This means you won't be able to download/load the model later.")
+            print("   However, all metrics, parameters, and figures are saved.")
+            print("")
+            print("   To fix this, you need to:")
+            print("   1. Set up DVC for DagsHub artifact storage, OR")
+            print("   2. Configure an S3/GCS backend for MLflow artifacts, OR")
+            print("   3. Use a different artifact storage solution")
+            print("")
         
         # Register model separately (skip if DagsHub doesn't support it)
         if args.register:

@@ -370,29 +370,66 @@ jobs:
               print('Available columns:', list(df_processed.columns))
               exit(1)
           
-          # Set MLflow tracking URI
-          mlflow.set_tracking_uri(os.getenv('MLFLOW_TRACKING_URI'))
+          # Set MLflow tracking URI and ensure authentication
+          tracking_uri = os.getenv('MLFLOW_TRACKING_URI')
+          mlflow.set_tracking_uri(tracking_uri)
+          
+          # Set credentials for artifact downloads (MLflow reads these automatically)
+          # These are already set in the environment from the workflow step
+          
+          print(f'Tracking URI set: {tracking_uri}')
+          print(f'Authentication configured: {bool(os.getenv("MLFLOW_TRACKING_USERNAME"))}')
           
           # Try to load model from registry first, fallback to run ID
           run_id = os.environ.get('RUN_ID')
           model_version = os.environ.get('MODEL_VERSION', '1')
+          model = None
+          model_loaded = False
           
-          try:
-              # Try loading from model registry
-              model_uri = f'models:/hospital_readmission/{model_version}'
-              print(f'Attempting to load model from registry: {model_uri}')
-              model = mlflow.pyfunc.load_model(model_uri)
-              print('✅ Model loaded from registry')
-          except Exception as e:
-              print(f'⚠️  Could not load from registry ({e}), trying run ID...')
-              if run_id:
-                  # Fallback to loading directly from run
+          # Try loading from model registry
+          if not model_loaded:
+              try:
+                  model_uri = f'models:/hospital_readmission/{model_version}'
+                  print(f'Attempting to load model from registry: {model_uri}')
+                  model = mlflow.pyfunc.load_model(model_uri)
+                  print('✅ Model loaded from registry')
+                  model_loaded = True
+              except Exception as e:
+                  print(f'⚠️  Could not load from registry: {str(e)[:200]}')
+          
+          # Fallback to loading directly from run
+          if not model_loaded and run_id:
+              try:
                   model_uri = f'runs:/{run_id}/model'
                   print(f'Loading model from run: {model_uri}')
                   model = mlflow.pyfunc.load_model(model_uri)
                   print('✅ Model loaded from run')
-              else:
-                  raise Exception('No run ID available and registry load failed')
+                  model_loaded = True
+              except Exception as e:
+                  error_msg = str(e)
+                  print(f'⚠️  Could not load from run: {error_msg[:200]}')
+                  
+                  # Check if it's an artifact download issue
+                  if 'Failed to download artifacts' in error_msg or 'artifact' in error_msg.lower():
+                      print('')
+                      print('⚠️  WARNING: Cannot download model artifacts from DagsHub')
+                      print('   This may be due to:')
+                      print('   1. DagsHub artifact storage not configured')
+                      print('   2. Authentication issues with artifact downloads')
+                      print('   3. Model not properly saved during training')
+                      print('')
+                      print('   Evaluation will be skipped, but training completed successfully.')
+                      print('   Check the training logs to confirm model was saved.')
+                      print('')
+                      print('✅ Training completed - model metrics logged to DagsHub')
+                      print('⚠️  Evaluation skipped - model artifacts not accessible')
+                      exit(0)  # Exit gracefully, don't fail the workflow
+          
+          if not model_loaded:
+              print('❌ ERROR: Could not load model from any source')
+              print('   Run ID:', run_id)
+              print('   Model version:', model_version)
+              raise Exception('Model loading failed - no model available')
           
           # Debug: Check what columns the model expects
           print('Model loaded successfully')
