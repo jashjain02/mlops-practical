@@ -184,15 +184,27 @@ jobs:
           DAGSHUB_REPO_NAME: ${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}
         run: |
           if [ -z "$DAGSHUB_USERNAME" ] || [ -z "$DAGSHUB_TOKEN" ]; then
-            echo "Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set in GitHub Secrets"
+            echo "❌ Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set in GitHub Secrets"
+            echo "   Go to: Settings → Secrets and variables → Actions"
+            echo "   Add: DAGSHUB_USERNAME, DAGSHUB_REPO_NAME, DAGSHUB_TOKEN"
             exit 1
           fi
+          
+          # Set environment variables
           echo "DAGSHUB_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
           echo "DAGSHUB_REPO_NAME=$DAGSHUB_REPO_NAME" >> $GITHUB_ENV
-          echo "MLFLOW_TRACKING_URI=https://dagshub.com/$DAGSHUB_USERNAME/$DAGSHUB_REPO_NAME.mlflow" >> $GITHUB_ENV
+          
+          # Construct tracking URI (avoid masking by using hardcoded format)
+          TRACKING_URI="https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.mlflow"
+          echo "MLFLOW_TRACKING_URI=${TRACKING_URI}" >> $GITHUB_ENV
           echo "MLFLOW_TRACKING_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
           echo "MLFLOW_TRACKING_PASSWORD=$DAGSHUB_TOKEN" >> $GITHUB_ENV
-          echo "✅ Configured DagsHub MLflow tracking: https://dagshub.com/$DAGSHUB_USERNAME/$DAGSHUB_REPO_NAME.mlflow"
+          
+          # Display info (using format to avoid masking)
+          echo "✅ DagsHub Configuration:"
+          echo "   Username: ${DAGSHUB_USERNAME}"
+          echo "   Repository: ${DAGSHUB_REPO_NAME}"
+          echo "   Tracking URI: ${TRACKING_URI}"
       
       - name: Train model
         id: train
@@ -204,8 +216,12 @@ jobs:
           MLFLOW_TRACKING_PASSWORD: ${{ env.MLFLOW_TRACKING_PASSWORD }}
         run: |
           echo "🤖 Starting model training with DagsHub..."
-          echo "Tracking URI: $MLFLOW_TRACKING_URI"
-          echo "Repository: $DAGSHUB_USERNAME/$DAGSHUB_REPO_NAME"
+          echo ""
+          echo "Configuration:"
+          echo "  Username: $DAGSHUB_USERNAME"
+          echo "  Repository: $DAGSHUB_REPO_NAME"
+          echo "  Tracking URI: $MLFLOW_TRACKING_URI"
+          echo ""
           
           # Train the model (this will log to DagsHub)
           python -m src.train --data data/diabetes.csv --register hospital_readmission
@@ -281,15 +297,20 @@ jobs:
           DAGSHUB_REPO_NAME: ${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}
         run: |
           if [ -z "$DAGSHUB_USERNAME" ] || [ -z "$DAGSHUB_TOKEN" ]; then
-            echo "Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set in GitHub Secrets"
+            echo "❌ Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set in GitHub Secrets"
             exit 1
           fi
-          echo "MLFLOW_TRACKING_URI=https://dagshub.com/$DAGSHUB_USERNAME/$DAGSHUB_REPO_NAME.mlflow" >> $GITHUB_ENV
+          
+          # Construct tracking URI
+          TRACKING_URI="https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.mlflow"
+          echo "MLFLOW_TRACKING_URI=${TRACKING_URI}" >> $GITHUB_ENV
           echo "MLFLOW_TRACKING_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
           echo "MLFLOW_TRACKING_PASSWORD=$DAGSHUB_TOKEN" >> $GITHUB_ENV
           echo "DAGSHUB_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
           echo "DAGSHUB_REPO_NAME=$DAGSHUB_REPO_NAME" >> $GITHUB_ENV
+          
           echo "✅ Configured DagsHub MLflow tracking for evaluation"
+          echo "   URI: ${TRACKING_URI}"
       
       - name: Evaluate model
         env:
@@ -302,9 +323,14 @@ jobs:
           MODEL_VERSION: ${{ needs.train-model.outputs.model-version }}
         run: |
           echo "📊 Evaluating model performance with DagsHub..."
-          echo "Tracking URI: $MLFLOW_TRACKING_URI"
-          echo "Run ID: $RUN_ID"
-          echo "Model version: $MODEL_VERSION"
+          echo ""
+          echo "Configuration:"
+          echo "  Username: $DAGSHUB_USERNAME"
+          echo "  Repository: $DAGSHUB_REPO_NAME"
+          echo "  Tracking URI: $MLFLOW_TRACKING_URI"
+          echo "  Run ID: $RUN_ID"
+          echo "  Model version: $MODEL_VERSION"
+          echo ""
           python -c "
           import mlflow
           import mlflow.pyfunc

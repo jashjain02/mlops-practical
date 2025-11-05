@@ -24,9 +24,27 @@ try:
     dagshub.init(repo_owner=os.getenv("DAGSHUB_USERNAME", "jash.jain029"),
                  repo_name=os.getenv("DAGSHUB_REPO_NAME", "DiabetesMLops"),
                  mlflow=True)
+    
+    # Explicitly set MLflow tracking URI and credentials if provided (for CI/CD)
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+        print(f"✅ Using MLflow tracking URI: {tracking_uri}")
+    
+    # Set credentials if provided (MLflow automatically reads MLFLOW_TRACKING_USERNAME and MLFLOW_TRACKING_PASSWORD)
+    if os.getenv("MLFLOW_TRACKING_USERNAME") and os.getenv("MLFLOW_TRACKING_PASSWORD"):
+        # MLflow will automatically use these env vars for authentication
+        print(f"✅ MLflow authentication configured")
+        
 except Exception as e:
     print(f"Warning: Could not initialize DagsHub: {e}")
-    print("Make sure DAGSHUB_USERNAME and DAGSHUB_REPO_NAME are set in .env file, or configure MLFLOW_TRACKING_URI manually")
+    print("Make sure DAGSHUB_USERNAME and DAGSHUB_REPO_NAME are set, or configure MLFLOW_TRACKING_URI manually")
+    
+    # Fallback: try to set tracking URI directly if provided
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+        print(f"✅ Using MLflow tracking URI directly: {tracking_uri}")
 
 from src.data_preprocessing import build_preprocessor, enrich_and_clean
 from src.evaluate import compute_metrics, roc_fig, pr_fig
