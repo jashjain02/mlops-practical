@@ -360,8 +360,7 @@ jobs:
           has_diag1 = 'diag_1_chapter' in df_processed.columns
           has_diag2 = 'diag_2_chapter' in df_processed.columns
           has_diag3 = 'diag_3_chapter' in df_processed.columns
-          print('Has required cols? ' +
-                f"age_years={has_age_years}, diag1={has_diag1}, diag2={has_diag2}, diag3={has_diag3}")
+          print(f'Has required cols? age_years={has_age_years}, diag1={has_diag1}, diag2={has_diag2}, diag3={has_diag3}')
           
           # Verify we have the required columns
           required_cols = ['age_years', 'diag_1_chapter', 'diag_2_chapter', 'diag_3_chapter']
