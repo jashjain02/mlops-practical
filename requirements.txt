@@ -3,6 +3,8 @@ numpy
 scikit-learn==1.7.2
 xgboost
 mlflow
+dagshub
+python-dotenv
 joblib
 matplotlib
 seaborn

@@ -8,8 +8,7 @@ import mlflow.pyfunc
 from src.data_preprocessing import enrich_and_clean
 from src.utils import map_readmitted
 
-# Set MLflow tracking URI
-mlflow.set_tracking_uri("file://" + "/Users/jashjain/Desktop/NMIMS/mlops/DiabetesCareMLOps/mlruns")
+# MLflow tracking URI is configured via environment variables or defaults
 
 # Load raw data and preprocess
 print("Loading and preprocessing data...")

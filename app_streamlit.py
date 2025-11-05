@@ -1,11 +1,25 @@
+import os
 import pandas as pd
 import streamlit as st
 import mlflow
 import mlflow.pyfunc
-import os
 
-# Set MLflow tracking URI
-mlflow.set_tracking_uri("file://" + os.path.join(os.getcwd(), "mlruns"))
+# Load environment variables from .env if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+# DagsHub integration
+try:
+    import dagshub
+    # Initialize DagsHub - uses environment variables if set, otherwise uses defaults
+    dagshub.init(repo_owner=os.getenv("DAGSHUB_USERNAME", "jash.jain029"),
+                 repo_name=os.getenv("DAGSHUB_REPO_NAME", "DiabetesMLops"),
+                 mlflow=True)
+except Exception as e:
+    st.warning(f"Could not initialize DagsHub: {e}. Make sure DAGSHUB_USERNAME and DAGSHUB_REPO_NAME are set in .env file, or configure MLFLOW_TRACKING_URI manually.")
 
 def age_bucket_to_years(age_bucket):
     """Convert age bucket to years (midpoint)"""

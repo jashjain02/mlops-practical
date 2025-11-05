@@ -9,6 +9,24 @@ from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 from sklearn.pipeline import Pipeline
 
+# Load environment variables from .env if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+# DagsHub integration
+try:
+    import dagshub
+    # Initialize DagsHub - uses environment variables if set, otherwise uses defaults
+    dagshub.init(repo_owner=os.getenv("DAGSHUB_USERNAME", "jash.jain029"),
+                 repo_name=os.getenv("DAGSHUB_REPO_NAME", "DiabetesMLops"),
+                 mlflow=True)
+except Exception as e:
+    print(f"Warning: Could not initialize DagsHub: {e}")
+    print("Make sure DAGSHUB_USERNAME and DAGSHUB_REPO_NAME are set in .env file, or configure MLFLOW_TRACKING_URI manually")
+
 from src.data_preprocessing import build_preprocessor, enrich_and_clean
 from src.evaluate import compute_metrics, roc_fig, pr_fig
 from src.utils import map_readmitted

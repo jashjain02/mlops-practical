@@ -25,6 +25,7 @@ mlruns/
 
 # Local development settings
 .env
+local.env
 
 # System Files
 .DS_Store

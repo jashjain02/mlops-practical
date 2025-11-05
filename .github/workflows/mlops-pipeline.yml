@@ -6,7 +6,6 @@ on:
       - 'data/**'
       - 'src/**'
       - 'requirements.txt'
-      - 'Dockerfile'
   workflow_dispatch:
     inputs:
       force_retrain:
@@ -45,7 +44,7 @@ jobs:
               echo "data=false" >> $GITHUB_OUTPUT
             fi
             
-            if git diff --name-only HEAD~1 HEAD | grep -E '^(src/|requirements\.txt|Dockerfile)' > /dev/null; then
+            if git diff --name-only HEAD~1 HEAD | grep -E '^(src/|requirements\.txt)' > /dev/null; then
               echo "src=true" >> $GITHUB_OUTPUT
             else
               echo "src=false" >> $GITHUB_OUTPUT
@@ -91,24 +90,24 @@ jobs:
           
           data_file = 'data/diabetes.csv'
           if not os.path.exists(data_file):
-              print('❌ Data file not found')
+              print('Data file not found')
               exit(1)
           
           try:
               df = pd.read_csv(data_file)
-              print(f'✅ Data loaded successfully: {len(df)} rows, {len(df.columns)} columns')
+              print(f'Data loaded successfully: {len(df)} rows, {len(df.columns)} columns')
               
               # Check for required columns
               required_cols = ['readmitted', 'age', 'gender', 'race']
               missing_cols = [col for col in required_cols if col not in df.columns]
               if missing_cols:
-                  print(f'❌ Missing required columns: {missing_cols}')
+                  print(f' Missing required columns: {missing_cols}')
                   exit(1)
               
-              print('✅ Data validation passed')
+              print('Data validation passed')
               print('valid=true', file=open('$GITHUB_OUTPUT', 'a'))
           except Exception as e:
-              print(f'❌ Data validation failed: {e}')
+              print(f'Data validation failed: {e}')
               exit(1)
           "
 
@@ -178,50 +177,47 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Create MLflow directory
+      - name: Set up DagsHub authentication
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
-          mkdir -p ./mlruns
-          chmod 755 ./mlruns
-          echo "Created mlruns directory: $(pwd)/mlruns"
-      
-      - name: Set MLflow tracking URI
-        run: |
-          echo "MLFLOW_TRACKING_URI=file://$(pwd)/mlruns" >> $GITHUB_ENV
-          echo "MLFLOW_REGISTRY_URI=file://$(pwd)/mlruns" >> $GITHUB_ENV
-          echo "Set MLflow tracking URI to: file://$(pwd)/mlruns"
+          if [ -z "$DAGSHUB_USERNAME" ] || [ -z "$DAGSHUB_TOKEN" ]; then
+            echo "Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set"
+            exit 1
+          fi
+          echo "DAGSHUB_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
+          echo "DAGSHUB_REPO_NAME=${{ secrets.DAGSHUB_REPO_NAME || 'DiabetesMLops' }}" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_URI=https://dagshub.com/$DAGSHUB_USERNAME/${{ secrets.DAGSHUB_REPO_NAME }}.mlflow" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_PASSWORD=$DAGSHUB_TOKEN" >> $GITHUB_ENV
+          echo "Configured DagsHub MLflow tracking"
       
       - name: Train model
         id: train
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_REPO_NAME: ${{ secrets.DAGSHUB_REPO_NAME }}
+          MLFLOW_TRACKING_URI: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME }}.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
           echo "🤖 Starting model training..."
-          # Ensure MLflow directory exists and is writable
-          mkdir -p ./mlruns
-          chmod 755 ./mlruns
-          # Set MLflow tracking URI to absolute path
-          export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
-          export MLFLOW_REGISTRY_URI="file://$(pwd)/mlruns"
-          echo "Using MLflow tracking URI: $MLFLOW_TRACKING_URI"
-          echo "Current directory: $(pwd)"
-          echo "MLruns directory exists: $(ls -la mlruns 2>/dev/null || echo 'Directory does not exist')"
+          echo "Using DagsHub MLflow tracking URI: $MLFLOW_TRACKING_URI"
           python -m src.train --data data/diabetes.csv --register hospital_readmission
           
           # Get the latest model version
           python -c "
           import mlflow
+          import os
           from mlflow.tracking import MlflowClient
           
+          mlflow.set_tracking_uri(os.getenv('MLFLOW_TRACKING_URI'))
           client = MlflowClient()
           latest_version = client.get_latest_versions('hospital_readmission', stages=['None'])[0]
           print(f'model-version={latest_version.version}', file=open('$GITHUB_OUTPUT', 'a'))
           print(f'run-id={latest_version.run_id}', file=open('$GITHUB_OUTPUT', 'a'))
           "
-      
-      - name: Upload model artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlflow-model
-          path: mlruns/
-          retention-days: 30
 
   evaluate-model:
     needs: [train-model]
@@ -240,35 +236,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      - name: Create MLflow directory
+      - name: Set up DagsHub authentication
+        env:
+          DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
-          mkdir -p ./mlruns
-          chmod 755 ./mlruns
-          echo "Created mlruns directory: $(pwd)/mlruns"
-      
-      - name: Set MLflow tracking URI
-        run: |
-          echo "MLFLOW_TRACKING_URI=file://$(pwd)/mlruns" >> $GITHUB_ENV
-          echo "MLFLOW_REGISTRY_URI=file://$(pwd)/mlruns" >> $GITHUB_ENV
-          echo "Set MLflow tracking URI to: file://$(pwd)/mlruns"
-      
-      - name: Download model artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: mlflow-model
-          path: mlruns/
+          if [ -z "$DAGSHUB_USERNAME" ] || [ -z "$DAGSHUB_TOKEN" ]; then
+            echo "Error: DAGSHUB_USERNAME and DAGSHUB_TOKEN secrets must be set"
+            exit 1
+          fi
+          echo "MLFLOW_TRACKING_URI=https://dagshub.com/$DAGSHUB_USERNAME/${{ secrets.DAGSHUB_REPO_NAME }}.mlflow" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_USERNAME=$DAGSHUB_USERNAME" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_PASSWORD=$DAGSHUB_TOKEN" >> $GITHUB_ENV
+          echo "Configured DagsHub MLflow tracking"
       
       - name: Evaluate model
+        env:
+          MLFLOW_TRACKING_URI: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME }}.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+          MODEL_VERSION: ${{ needs.train-model.outputs.model-version }}
         run: |
           echo "📊 Evaluating model performance..."
-          # Ensure MLflow directory exists and is writable
-          mkdir -p ./mlruns
-          chmod 755 ./mlruns
-          # Set MLflow tracking URI to absolute path
-          export MLFLOW_TRACKING_URI="file://$(pwd)/mlruns"
-          export MLFLOW_REGISTRY_URI="file://$(pwd)/mlruns"
-          echo "Using MLflow tracking URI: $MLFLOW_TRACKING_URI"
-          echo "Model version: ${{ needs.train-model.outputs.model-version }}"
+          echo "Using DagsHub MLflow tracking URI: $MLFLOW_TRACKING_URI"
+          echo "Model version: $MODEL_VERSION"
           python -c "
           import mlflow
           import mlflow.pyfunc
@@ -308,6 +299,9 @@ jobs:
               print(f'ERROR: Missing required columns: {missing_cols}')
               print('Available columns:', list(df_processed.columns))
               exit(1)
+          
+          # Set MLflow tracking URI
+          mlflow.set_tracking_uri(os.getenv('MLFLOW_TRACKING_URI'))
           
           # Load model - get version from environment variable
           model_version = os.environ.get('MODEL_VERSION', 'latest')
@@ -349,86 +343,22 @@ jobs:
           else:
               print('✅ Model performance meets requirements')
           "
-        env:
-          MODEL_VERSION: ${{ needs.train-model.outputs.model-version }}
-
-  build-docker:
-    needs: [train-model, evaluate-model]
-    runs-on: ubuntu-latest
-    outputs:
-      image-digest: ${{ steps.build.outputs.digest }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Download model artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: mlflow-model
-          path: mlruns/
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Login to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/diabetes-mlops
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-      
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          build-args: |
-            MODEL_VERSION=${{ needs.train-model.outputs.model-version }}
-
-  deploy-staging:
-    needs: [build-docker]
-    runs-on: ubuntu-latest
-    environment: staging
-    steps:
-      - name: Deploy to staging
-        run: |
-          echo "🚀 Deploying to staging environment..."
-          echo "Docker image: ghcr.io/${{ github.repository }}/diabetes-mlops:${{ github.sha }}"
-          echo "Model version: ${{ needs.train-model.outputs.model-version }}"
-          # Add your deployment logic here
-          # For example: kubectl apply, docker-compose up, etc.
 
   notify:
-    needs: [train-model, evaluate-model, build-docker]
+    needs: [train-model, evaluate-model]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Notify success
-        if: needs.train-model.result == 'success' && needs.evaluate-model.result == 'success' && needs.build-docker.result == 'success'
+        if: needs.train-model.result == 'success' && needs.evaluate-model.result == 'success'
         run: |
           echo "✅ MLOps pipeline completed successfully!"
           echo "Model version: ${{ needs.train-model.outputs.model-version }}"
-          echo "Docker image: ghcr.io/${{ github.repository }}/diabetes-mlops:${{ github.sha }}"
+          echo "Model run ID: ${{ needs.train-model.outputs.run-id }}"
+          echo "View model on DagsHub: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/${{ secrets.DAGSHUB_REPO_NAME }}"
       
       - name: Notify failure
-        if: needs.train-model.result == 'failure' || needs.evaluate-model.result == 'failure' || needs.build-docker.result == 'failure'
+        if: needs.train-model.result == 'failure' || needs.evaluate-model.result == 'failure'
         run: |
           echo "❌ MLOps pipeline failed!"
           echo "Check the logs for details."
